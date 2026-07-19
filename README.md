@@ -1,53 +1,72 @@
-# Slack 集成后端 API
+# Research Copilot + Slack (AI Agent 实验代码生成器)
 
-一个与 Slack 集成的 FastAPI 后端项目，支持 DM 消息处理、用户认证、订阅管理等功能。
+一个与 Slack 集成的 FastAPI 后端项目，旨在作为一个 AI 代理（AI Agent），帮助研究人员和开发者自动分析论文、生成实验代码、修复代码并部署到 AWS 环境。项目深度集成了 Slack DM（直接消息）和交互式组件，支持 GitHub 仓库分析和 PayPal 支付订阅系统。
 
 ## 功能特性
 
-- 🔐 **Slack OAuth 认证**: 支持用户通过 Slack 账号登录
-- 💬 **DM 消息处理**: 接收和回复 Slack 直接消息
-- 👥 **用户管理**: 用户注册、资料管理、行为记录
-- 💳 **订阅系统**: 多层级订阅计划和支付处理
-- 📊 **使用统计**: 用户行为分析和使用次数统计
-- 🛡️ **安全保护**: JWT 认证、请求签名验证、安全头
-- 📚 **API 文档**: 自动生成的 OpenAPI 文档
+- 🤖 **AI 代码生成与修复**: 核心功能 `AgentWorkFlow`，支持从学术论文和聊天记录自动生成实验代码 (`CodeGenerateHandler`)，并进行代码修复 (`CodeFixHandler`)。
+- 📚 **PDF 论文分析**: 自动分析 PDF 格式的学术论文 (`PaperAnalyzer`)，提取核心贡献和未来研究方向。
+- 🔗 **GitHub 深度集成**: 自动解析 GitHub 仓库 (`GitHubService`)，提取项目结构和代码内容作为 AI 生成上下文；支持更新 GitHub Secrets。
+- ☁️ **AWS 自动化**: 集成了基于 boto3 的 AWS 操作，可能用于自动化部署实验环境（如 ECR、SageMaker 等）。
+- 💬 **Slack 全面集成**: 
+  - 支持 Slack OAuth 认证 (`/auth/login`)。
+  - DM (直接消息) 处理，响应用户的指令和消息 (`/slack/events`)。
+  - 交互式组件 (Interactive Components) 支持 (`/slack/interactive`)。
+- 💳 **PayPal 订阅系统**: 集成 PayPal 支付 (`/slack/paypal-payment`) 和 Webhook (`/slack/paypal-webhook`)，实现多层级订阅和自动续费。
+- 👥 **用户与工作区管理**: 用户资料维护、使用统计、订阅状态查询；支持多 Slack 工作区初始化和管理。
+- 🛡️ **安全与异常处理**: 全局异常捕获 (`SlackBotException`)、请求安全头、JWT 认证以及 GitHub 凭证加密处理。
 
 ## 技术栈
 
-- **FastAPI**: 现代、快速的 Web 框架
-- **MongoDB**: NoSQL 数据库
-- **Slack SDK**: Slack API 集成
-- **JWT**: 用户认证
-- **Pydantic**: 数据验证
-- **Motor**: 异步 MongoDB 驱动
+- **Web 框架**: FastAPI, Uvicorn, Starlette
+- **异步处理**: aiohttp, asyncio, anyio
+- **AI/LLM**: openai, tiktoken
+- **数据处理与科学计算**: numpy, pandas, scipy, sympy
+- **数据库**: MongoDB (Motor异步驱动, pymongo)
+- **Slack 集成**: slack-sdk
+- **云服务集成**: boto3, aioboto3 (AWS)
+- **文档处理**: PyMuPDF, pdfplumber, pdfminer.six, pdf2image (PDF 解析)
+- **认证与安全**: PyJWT, bcrypt, cryptography, PyNaCl
+- **支付集成**: PayPal API
+- **代码格式化**: black
 
 ## 项目结构
 
 ```
 slack-integration/
-├── main.py                 # FastAPI 应用入口
-├── run.py                  # 应用启动文件
-├── config.py               # 配置管理
-├── database.py             # 数据库连接
-├── models.py               # 数据模型
-├── exceptions.py           # 自定义异常
-├── middleware.py           # 中间件
-├── utils.py                # 工具函数
-├── requirements.txt        # 依赖包
-├── .env.example           # 环境变量示例
-├── routers/               # 路由模块
-│   ├── __init__.py
-│   ├── auth.py            # 认证路由
-│   ├── events.py          # Slack 事件路由
-│   ├── subscription.py    # 订阅管理路由
-│   └── user.py            # 用户管理路由
-└── services/              # 服务层
-    ├── __init__.py
-    ├── auth_service.py     # 认证服务
-    ├── database_service.py # 数据库服务
-    ├── message_service.py  # 消息处理服务
-    ├── slack_service.py    # Slack API 服务
-    └── subscription_service.py # 订阅服务
+├── main.py                 # FastAPI 应用主入口，注册中间件和路由
+├── run.py                  # 应用启动脚本
+├── config.py               # 环境变量与配置管理
+├── database.py             # 数据库连接初始化
+├── models.py               # 数据库模型定义
+├── exceptions.py           # 自定义异常类
+├── middleware.py           # 中间件（日志、异常处理、安全头）
+├── utils.py                # 通用工具函数
+├── requirements.txt        # Python 依赖清单
+├── .env.example            # 环境变量配置示例
+├── k8s/                    # Kubernetes 部署文件 (deployment.yaml, service.yaml)
+├── .github/workflows/      # GitHub Actions CI/CD 配置
+├── routers/                # 基础 REST API 路由
+│   ├── auth.py             # 认证
+│   ├── events.py           # Slack 基础事件
+│   ├── subscription.py     # 订阅查询
+│   ├── user.py             # 用户管理
+│   └── workspace.py        # 工作区管理
+├── routes/                 # 核心业务路由
+│   ├── paypal_payment.py   # PayPal 支付发起
+│   ├── paypal_webhook.py   # PayPal 回调处理
+│   └── slack_interactive.py# Slack 交互组件回调
+└── services/               # 核心业务逻辑层 (Agent 核心)
+    ├── agent_work_flow.py  # 核心 Agent 工作流（代码生成 -> 部署流程管理）
+    ├── analyzer.py         # PDF/文本内容分析器
+    ├── code_fix_handler.py # AI 代码自动修复
+    ├── code_generate_handler.py # AI 实验代码生成
+    ├── database_service.py # 数据库操作封装
+    ├── github_service.py   # GitHub API 交互与仓库解析
+    ├── paypal_handler.py   # PayPal 业务逻辑
+    ├── pdfLinkHandler.py   # PDF 链接下载与处理
+    ├── slack_service.py    # Slack 消息发送与 API 封装
+    └── user_reply_handler.py # 用户交互回复处理
 ```
 
 ## 安装和配置
@@ -73,7 +92,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-编辑 `.env` 文件：
+编辑 `.env` 文件，补充核心配置（部分必须配置项如下）：
 
 ```env
 # Slack 应用配置
@@ -82,18 +101,25 @@ SLACK_CLIENT_SECRET=your_slack_client_secret
 SLACK_SIGNING_SECRET=your_slack_signing_secret
 SLACK_BOT_TOKEN=xoxb-your-bot-token
 
+# GitHub 集成配置
+GITHUB_USERNAME=your_github_username
+GITHUB_TOKEN=your_github_personal_access_token
+
+# AWS 部署配置
+AWS_ACCESS_KEY=your_aws_access_key
+AWS_SECRET_KEY=your_aws_secret_key
+AWS_REGION=your_aws_region
+AWS_ACCOUNT_ID=your_aws_account_id
+
 # MongoDB 配置
 MONGODB_URL=mongodb://localhost:27017
 MONGODB_DATABASE=slack-integration
 
-# 应用配置
+# 支付与其他配置
 SECRET_KEY=your-secret-key-here
 ENVIRONMENT=development
 HOST=0.0.0.0
 PORT=8000
-
-# OAuth 配置
-OAUTH_REDIRECT_URI=http://localhost:8000/auth/callback
 ```
 
 ### 4. 设置 Slack 应用
