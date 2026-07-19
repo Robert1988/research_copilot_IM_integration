@@ -1,0 +1,160 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slack-integration
+  namespace: default
+  labels:
+    app: slack-integration
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1    # 最多 1 个 Pod 不可用
+      maxSurge: 0          # 不允许超出期望副本数
+  selector:
+    matchLabels:
+      app: slack-integration
+  template:
+    metadata:
+      labels:
+        app: slack-integration
+    spec:
+      containers:
+      - name: slack-integration
+        image: slack-integration:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DEEPSEEK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: deepseek-api-key
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: jwt-secret-key
+        - name: OPENROUTER_BASE_URL
+          value: "https://openrouter.ai/api/v1"      
+        - name: AWS_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: aws-access-key
+        - name: AWS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: aws-secret-key
+        - name: AWS_ACCOUNT_ID
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: aws-account-id
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: mongodb-uri
+        - name: PAYPAL_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: paypal-client-id
+        - name: PAYPAL_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: paypal-client-secret
+        - name: PAYPAL_CLIENT_ID_PROD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: paypal-client-id-prod
+        - name: PAYPAL_CLIENT_SECRET_PROD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: paypal-client-secret-prod
+        - name: PAYPAL_ENVIRONMENT
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: paypal-environment
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: github-token
+        - name: GITHUB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: github-username
+        - name: LAMBDA_EXECUTION_ROLE_ARN
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: lambda-execution-role-arn
+        - name: KMS_KEY_ARN
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: kms-key-arn
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: openrouter-api-key
+        - name: SLACK_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: slack-client-id
+        - name: SLACK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: slack-client-secret
+        - name: SLACK_SIGNING_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: slack-signing-secret
+        - name: SLACK_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: slack-bot-token
+        - name: ENVIRONMENT
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: environment
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 240    # 增加初始延迟
+          periodSeconds: 10
+          timeoutSeconds: 5          # 添加超时设置
+          failureThreshold: 3        # 添加失败阈值
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120    # 增加初始延迟
+          periodSeconds: 10
+          timeoutSeconds: 5          # 添加超时设置
+          failureThreshold: 3        # 添加失败阈值

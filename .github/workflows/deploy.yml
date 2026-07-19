@@ -1,0 +1,131 @@
+name: Deploy to AWS EKS
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: devCluster03
+  ECR_REPOSITORY: slack-integration
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    # ECR 操作使用第一组凭据
+    - name: Configure AWS credentials for ECR
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build a docker container and push it to ECR
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    # EKS 操作使用第二组凭据
+    - name: Configure AWS credentials for EKS
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.EKS_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.EKS_AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        # role-to-assume: ${{ secrets.EKS_DEPLOYMENT_ROLE_ARN }}
+        # role-session-name: GitHubActions-EKS-Deployment
+        # role-duration-seconds: 3600
+    - name: Update kube config
+      run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+
+    - name: Deploy to EKS
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+        # 现有的应用密钥环境变量
+        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+        AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+        AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+        PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
+        PAYPAL_CLIENT_ID_PROD: ${{ secrets.PAYPAL_CLIENT_ID_PROD }}
+        PAYPAL_CLIENT_SECRET_PROD: ${{ secrets.PAYPAL_CLIENT_SECRET_PROD }}
+        PAYPAL_ENVIRONMENT: live
+        # 新增的环境变量
+        GITHUB_TOKEN: ${{ secrets.AS_GITHUB_TOKEN }}
+        GITHUB_USERNAME: ${{ secrets.AS_GITHUB_USERNAME }}
+        LAMBDA_EXECUTION_ROLE_ARN: ${{ secrets.LAMBDA_EXECUTION_ROLE_ARN }}
+        KMS_KEY_ARN: ${{ secrets.KMS_KEY_ARN }}
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        # Slack 相关环境变量（来自 GitHub Secrets）
+        SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
+        SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
+        SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+        SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        ENVIRONMENT: production
+      run: |
+        # Update the image in deployment
+        sed -i "s|039612844675.dkr.ecr.us-east-1.amazonaws.com/slack-integration:latest|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" k8s/deployment.yaml
+        
+        # 动态创建/更新 Kubernetes Secret（包含 Slack 配置）
+        kubectl create secret generic app-secrets \
+          --from-literal=deepseek-api-key="$DEEPSEEK_API_KEY" \
+          --from-literal=jwt-secret-key="$JWT_SECRET_KEY" \
+          --from-literal=aws-access-key="$AWS_ACCESS_KEY" \
+          --from-literal=aws-secret-key="$AWS_SECRET_KEY" \
+          --from-literal=mongodb-uri="$MONGODB_URI" \
+          --from-literal=paypal-client-id="$PAYPAL_CLIENT_ID" \
+          --from-literal=paypal-client-secret="$PAYPAL_CLIENT_SECRET" \
+          --from-literal=paypal-client-id-prod="$PAYPAL_CLIENT_ID_PROD" \
+          --from-literal=paypal-client-secret-prod="$PAYPAL_CLIENT_SECRET_PROD" \
+          --from-literal=paypal-environment="$PAYPAL_ENVIRONMENT" \
+          --from-literal=github-token="$GITHUB_TOKEN" \
+          --from-literal=github-username="$GITHUB_USERNAME" \
+          --from-literal=lambda-execution-role-arn="$LAMBDA_EXECUTION_ROLE_ARN" \
+          --from-literal=kms-key-arn="$KMS_KEY_ARN" \
+          --from-literal=openrouter-api-key="$OPENROUTER_API_KEY" \
+          --from-literal=aws-account-id="$AWS_ACCOUNT_ID" \
+          --from-literal=slack-client-id="$SLACK_CLIENT_ID" \
+          --from-literal=slack-client-secret="$SLACK_CLIENT_SECRET" \
+          --from-literal=slack-signing-secret="$SLACK_SIGNING_SECRET" \
+          --from-literal=slack-bot-token="$SLACK_BOT_TOKEN" \
+          --from-literal=environment="$ENVIRONMENT" \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        # 部署应用
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
+        
+        # 等待部署完成（增加超时时间）
+        kubectl rollout status deployment/slack-integration --timeout=600s
+        
+        # 获取服务信息
+        kubectl get services slack-integration-service
